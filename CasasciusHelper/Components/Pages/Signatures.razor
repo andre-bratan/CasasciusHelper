@@ -1,0 +1,302 @@
+﻿@page "/signatures"
+@using CasasciusHelper.Core.Services
+@using System.Text
+@inject IMessageSigningService MessageSigningService
+@inject IMiniKeyService MiniKeyService
+@inject IJSRuntime JsRuntime
+
+<h1>Sign/Verify a Message</h1>
+<hr/>
+
+<b>Note:</b> If you want to check if someone (claiming they have access to a MiniKey) actually does, you should ask them to sign <b>your message</b> with the MiniKey and post the results back to you.<br/>
+Then you verify the signature using the address of the MiniKey's owner and the message <b>you originally provided</b>.<br/>
+<br/>
+<b>Warning:</b> No algorithm is able to 100% prove that a person who has signed the message actually owns the MiniKey (for example: it may be someone who acts on behalf of the MiniKey owner).<br/>
+But if a signature is valid, it is very likely that the MiniKey owner <b>had</b> access to the corresponding address <b>at the moment of signing</b> (i.e. the best attitude to the signature is to suppose is has expired at the moment of signing).
+<hr/>
+
+<h4>Sign a message using your MiniKey</h4>
+<div class="card mb-4">
+    <div class="card-body">
+        <div class="mb-3">
+            <label class="form-label" for="sign-mini-key">Mini-key</label>
+            <input id="sign-mini-key"
+                   class="@($"form-control {( !string.IsNullOrWhiteSpace(signMiniKey) ? (IsSignMiniKeyValid ? "is-valid" : "is-invalid") : string.Empty)}")"
+                   placeholder="Enter your mini-key"
+                   @bind="signMiniKey"
+                   autocomplete="off" />
+            @if (!string.IsNullOrWhiteSpace(signMiniKey))
+            {
+                if (!IsSignMiniKeyValid)
+                {
+                    <div class="text-danger small">Mini-key format is invalid.</div>
+                }
+                else
+                {
+                    <div class="text-success small">Mini-key looks valid.</div>
+                }
+            }
+            else
+            {
+                <div class="text-secondary small">Your mini-key is used <b>on server side</b> to create the signature.</div>
+            }
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label" for="sign-message">Message</label>
+            <textarea id="sign-message"
+                      class="form-control"
+                      rows="4"
+                      placeholder="Enter the message to sign"
+                      @bind="signMessage"></textarea>
+            <div class="text-secondary small">It is recommended that the message consist of one line to avoid confusion with newline characters during verification.</div>
+        </div>
+
+        <div class="d-flex gap-2 mb-3">
+            <button class="btn btn-primary"
+                    @onclick="Sign"
+                    disabled="@(isSigning || string.IsNullOrWhiteSpace(signMiniKey) || string.IsNullOrWhiteSpace(signMessage) || !IsSignMiniKeyValid)">
+                @(isSigning ? "Signing..." : "Sign")
+            </button>
+            <button class="btn btn-outline-secondary"
+                    @onclick="ClearSign">
+                Clear
+            </button>
+        </div>
+
+        @if (!string.IsNullOrEmpty(signError))
+        {
+            <div class="alert alert-danger" role="alert">@signError</div>
+        }
+
+        @if (!string.IsNullOrEmpty(signSignature))
+        {
+            <hr/>
+            <div class="alert alert-danger" role="alert">
+                WARNING: <b>Never share your MiniKey with anyone!</b><br/>
+                You only need to provide the information below (address, message, and signature) to someone who wants to check the fact you own the MiniKey.
+            </div>
+            <div class="mb-2">
+                <label class="form-label" for="sign-address">Address</label>
+                <textarea id="sign-address"
+                          class="form-control"
+                          rows="1"
+                          readonly>@signAddress</textarea>
+            </div>
+            <div class="mb-2">
+                <label class="form-label" for="sign-message-result">Message</label>
+                <textarea id="sign-message-result"
+                          class="form-control"
+                          rows="4"
+                          readonly>@signMessage</textarea>
+            </div>
+            <div class="mb-2">
+                <label class="form-label" for="sign-signature">Signature (Base64, BIP322)</label>
+                <textarea id="sign-signature"
+                          class="form-control"
+                          rows="3"
+                          readonly>@signSignature</textarea>
+            </div>
+            <div>
+                <button class="btn btn-outline-primary"
+                        @onclick="CopyToClipboard">
+                    Copy to clipboard
+                </button>
+                <div class="text-secondary small">Note: Copy to clipboard button will work only for SSL connections.</div>
+            </div>
+        }
+    </div>
+</div>
+
+<h4>Verify a message signed with a MiniKey</h4>
+<div class="card">
+    <div class="card-body">
+        <div class="mb-3">
+            <label class="form-label" for="verify-address">Address</label>
+            <input id="verify-address"
+                   class="form-control"
+                   type="text"
+                   placeholder="Enter the signer's Bitcoin address"
+                   @bind="verifyAddress" />
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label" for="verify-message">Message</label>
+            <textarea id="verify-message"
+                      class="form-control"
+                      rows="4"
+                      placeholder="Enter the original message"
+                      @bind="verifyMessage"></textarea>
+            <div class="text-secondary small">Make sure the message is <b>exactly the same as the one used during signing</b> - even excess "newline" characters matter.</div>
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label" for="verify-signature">Signature (Base64, BIP322)</label>
+            <textarea id="verify-signature"
+                      class="form-control"
+                      rows="3"
+                      placeholder="Paste the signature here"
+                      @bind="verifySignature"></textarea>
+        </div>
+
+        <div class="d-flex gap-2 mb-3">
+            <button class="btn btn-primary"
+                    @onclick="Verify"
+                    disabled="@(isVerifying || string.IsNullOrWhiteSpace(verifyAddress) || string.IsNullOrWhiteSpace(verifyMessage) || string.IsNullOrWhiteSpace(verifySignature))">
+                @(isVerifying ? "Verifying..." : "Verify")
+            </button>
+            <button class="btn btn-outline-secondary"
+                    @onclick="ClearVerify">
+                Clear
+            </button>
+        </div>
+
+        @if (!string.IsNullOrEmpty(verifyError))
+        {
+            <div class="alert alert-danger" role="alert">@verifyError</div>
+        }
+
+        @if (verifyResult.HasValue)
+        {
+            if (verifyResult.Value)
+            {
+                <div class="alert alert-success" role="alert">
+                    Signature is valid. The one who has signed the message <b>is very likely</b> to own the MiniKey giving access to the provided address.
+                </div>
+            }
+            else
+            {
+                <div class="alert alert-danger" role="alert">
+                    Signature is NOT valid for the provided address and message.
+                </div>
+            }
+        }
+    </div>
+</div>
+
+@code {
+    // Sign section state
+    private string signMiniKey = string.Empty;
+    private string? signAddress;
+    private string signMessage = string.Empty;
+    private string? signSignature;
+    private string? signError;
+    private bool isSigning;
+
+    // Verify section state
+    private string verifyAddress = string.Empty;
+    private string verifyMessage = string.Empty;
+    private string verifySignature = string.Empty;
+    private bool? verifyResult;
+    private string? verifyError;
+    private bool isVerifying;
+
+    // Mini-key validity computed from current input
+    private bool IsSignMiniKeyValid =>
+        !string.IsNullOrWhiteSpace(signMiniKey) &&
+        MiniKeyService.CheckMiniKey(Encoding.UTF8.GetBytes(signMiniKey.Trim()));
+
+    private void Sign()
+    {
+        isSigning = true;
+        signError = null;
+        signSignature = null;
+        StateHasChanged();
+
+        try
+        {
+            if (string.IsNullOrWhiteSpace(signMiniKey) || string.IsNullOrWhiteSpace(signMessage))
+            {
+                signError = "Please enter both mini-key and message.";
+                return;
+            }
+
+            // Validate mini-key format before signing
+            if (!MiniKeyService.CheckMiniKey(Encoding.UTF8.GetBytes(signMiniKey.Trim())))
+            {
+                signError = "Invalid mini-key format.";
+                return;
+            }
+
+            // Use service to sign
+            signAddress = MiniKeyService.GetAddressFromMiniKey(signMiniKey.Trim());
+            signSignature = MessageSigningService.SignMessage(signMiniKey.Trim(), signMessage);
+        }
+        catch (Exception ex)
+        {
+            signError = ex.Message;
+        }
+        finally
+        {
+            isSigning = false;
+        }
+
+        StateHasChanged();
+    }
+
+    private void Verify()
+    {
+        isVerifying = true;
+        verifyError = null;
+        verifyResult = null;
+        StateHasChanged();
+
+        if (string.IsNullOrWhiteSpace(verifyAddress) ||
+            string.IsNullOrWhiteSpace(verifyMessage) ||
+            string.IsNullOrWhiteSpace(verifySignature))
+        {
+            verifyError = "Please enter address, message, and signature.";
+            return;
+        }
+
+        try
+        {
+            verifyResult = MessageSigningService.VerifyMessage(
+                verifyAddress.Trim(),
+                verifyMessage,
+                verifySignature.Trim());
+        }
+        catch (Exception ex)
+        {
+            verifyError = ex.Message;
+        }
+        finally
+        {
+            isVerifying = false;
+        }
+
+        StateHasChanged();
+    }
+
+    private void ClearSign()
+    {
+        signMiniKey = string.Empty;
+        signAddress = null;
+        signMessage = string.Empty;
+        signSignature = null;
+        signError = null;
+    }
+
+    private void ClearVerify()
+    {
+        verifyAddress = string.Empty;
+        verifyMessage = string.Empty;
+        verifySignature = string.Empty;
+        verifyResult = null;
+        verifyError = null;
+    }
+
+    private async Task CopyToClipboard()
+    {
+        var textToCopy = $"Address: {signAddress}{Environment.NewLine}Message:{Environment.NewLine}{signMessage}{Environment.NewLine}Signature:{Environment.NewLine}{signSignature}{Environment.NewLine}";
+
+        try
+        {
+            await JsRuntime.InvokeVoidAsync("navigator.clipboard.writeText", textToCopy);
+        }
+        catch (JSException)
+        {
+            // ignore exceptions for non-SSL connections
+        }
+    }
+}

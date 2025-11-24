@@ -1,0 +1,94 @@
+﻿@page "/apiExamples"
+@using CasasciusHelper.Core.Data
+@using CasasciusHelper.Core.State
+@inject NavigationManager NavigationManager
+@inject IHttpClientFactory HttpClientFactory
+@inject ApplicationState ApplicationState
+@inject ICasasciusDataCache CasasciusDataCache
+
+<h1>Rest API call examples</h1>
+<hr/>
+
+This page contains examples of non-trivial REST Api calls. See <a href="swagger">OpenApi/Swagger</a> for simple calls.
+<hr/>
+
+<h4>Upload Data CSV file using REST Api POST endpoint</h4>
+
+<InputFile OnChange="@OnCsvSelected" accept=".csv,text/csv" class="form-control" style="width: 500px;" />
+
+<button class="btn btn-primary mt-sm-1" @onclick="UploadAsync" disabled="@(!CanUpload)">
+    @(isUploading ? "Uploading..." : "Upload")
+</button>
+
+@if (!string.IsNullOrWhiteSpace(message))
+{
+    <div class="mt-2">@message</div>
+}
+
+@code {
+    private IBrowserFile? selectedFile;
+    private bool isUploading;
+    private string? message;
+
+    private bool CanUpload => selectedFile is not null && !isUploading;
+
+    private void OnCsvSelected(InputFileChangeEventArgs e)
+    {
+        selectedFile = e.File;
+        message = null;
+    }
+
+    private async Task UploadAsync()
+    {
+        if (selectedFile is null) return;
+
+        isUploading = true;
+        message = null;
+
+        try
+        {
+            var endpoint = new Uri(new Uri(NavigationManager.BaseUri), "uploadData");
+
+            using var form = new MultipartFormDataContent();
+
+            await using var stream = selectedFile.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024);
+
+            var fileContent = new StreamContent(stream);
+            fileContent.Headers.ContentType =
+                new System.Net.Http.Headers.MediaTypeHeaderValue(selectedFile.ContentType ?? "application/octet-stream");
+
+            form.Add(fileContent, "file", selectedFile.Name);
+
+            using var request = new HttpRequestMessage(HttpMethod.Post, endpoint)
+            {
+                Content = form
+            };
+
+            using var httpClient = HttpClientFactory.CreateClient();
+            var response = await httpClient.SendAsync(request);
+
+            if (response.IsSuccessStatusCode)
+            {
+                await CasasciusDataCache.Initialize();
+                ApplicationState.HasData = CasasciusDataCache.HasData;
+                ApplicationState.LastDataUpdate = CasasciusDataCache.LastUpdateTime;
+
+                message = "File uploaded successfully.";
+                selectedFile = null;
+            }
+            else
+            {
+                var body = await response.Content.ReadAsStringAsync();
+                message = $"Upload failed: {(int)response.StatusCode} {response.ReasonPhrase}. {body}";
+            }
+        }
+        catch (Exception ex)
+        {
+            message = $"Error: {ex.Message}";
+        }
+        finally
+        {
+            isUploading = false;
+        }
+    }
+}

@@ -1,0 +1,25 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net8.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>disable</Nullable>
+    </PropertyGroup>
+
+    <ItemGroup Label="External references">
+        <!--
+        Note: This is a CPM (https://learn.microsoft.com/uk-ua/nuget/consume-packages/central-package-management) notation depending on "Directory.Packages.props" file.
+        Replace it with the commented one below if needed
+        -->
+        <PackageReference Include="BouncyCastle.Cryptography" />
+        <!-- <PackageVersion Include="BouncyCastle.Cryptography" Version="2.6.2" /> -->
+    </ItemGroup>
+
+    <ItemGroup Label="Tests-related references">
+        <!-- Allow Tests project to "see" internal classes -->
+        <InternalsVisibleTo Include="$(AssemblyName).Tests" />
+        <InternalsVisibleTo Include="$(AssemblyName).Integration.Tests" />
+        <!-- NSubstitute requirement for "internal" classes -->
+        <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
+    </ItemGroup>
+</Project>

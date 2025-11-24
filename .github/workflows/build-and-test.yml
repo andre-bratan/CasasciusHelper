@@ -1,0 +1,42 @@
+﻿name: CI pipeline
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+  workflow_dispatch:
+env:
+  DOTNET_VERSION: 8.0.200
+  DOTNET_NOLOGO: true
+jobs:
+  all-at-once:
+    name: Build and Test everything
+    runs-on: ubuntu-latest
+    steps:
+    - id: checkout
+      name: Checkout
+      uses: actions/checkout@v5
+
+    - id: dotnet
+      name: Setup .NET SDK
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+
+    - id: restore
+      name: Restore NuGet packages
+      run: dotnet restore --locked-mode
+
+    - id: build
+      name: Build solution
+      run: dotnet build --no-restore --configuration Release
+
+    - id: test
+      name: Test solution
+      run: dotnet test --no-restore --no-build --configuration Release
+
+    - id: docker-build
+      name: Build Docker image
+      run: docker build -t casasciushelper .

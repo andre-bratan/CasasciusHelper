@@ -1,0 +1,23 @@
+# https://editorconfig.org/
+# https://github.com/dotnet/runtime/blob/main/.editorconfig
+
+root = true
+
+[*]
+insert_final_newline = true
+indent_style = space
+indent_size = 4
+trim_trailing_whitespace = true
+
+[*{.AssemblyInfo,.Designer,.g,ModelSnapshot}.cs]
+generated_code = true
+
+[*.json]
+indent_size = 2
+
+[*.{yml,yaml}]
+indent_size = 2
+tab_width = 2
+
+[*.md]
+trim_trailing_whitespace = false

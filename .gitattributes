@@ -1,0 +1,7 @@
+# https://www.aleksandrhovhannisyan.com/blog/crlf-vs-lf-normalizing-line-endings-in-git/
+* text=auto
+
+# Denote all files that are truly binary and should not be modified.
+# Note: Git is good at automatically detecting binary files. It checks first 8,000 bytes of a file to see if it contains a NUL character. If it does, the file is assumed to be binary. So, you should care about this section only in very rare cases (for example, UTF-16 encoded files could be mis-detected as binary). Thus, treat the following lines just as examples.
+*.png binary
+*.jpg binary

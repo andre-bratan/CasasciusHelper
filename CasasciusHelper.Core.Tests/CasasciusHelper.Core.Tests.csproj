@@ -1,0 +1,54 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net8.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+
+        <IsPackable>false</IsPackable>
+        <IsTestProject>true</IsTestProject>
+    </PropertyGroup>
+
+    <ItemGroup Label="Internal references">
+        <ProjectReference Include="..\CasasciusHelper.Core\CasasciusHelper.Core.csproj" />
+    </ItemGroup>
+
+    <ItemGroup Label="Tests related references">
+        <!-- In apps that use xunit.runner.visualstudio version 2.4.2 or later, the test project must reference the Microsoft.NET.Test.Sdk package. -->
+        <!-- https://github.com/microsoft/vstest/releases -->
+        <PackageReference Include="Microsoft.NET.Test.Sdk" />
+        <!-- https://fluentassertions.com/releases/, https://github.com/fluentassertions/fluentassertions/releases -->
+        <PackageReference Include="FluentAssertions" />
+
+        <!-- https://github.com/nsubstitute/NSubstitute/releases -->
+        <PackageReference Include="NSubstitute" />
+        <PackageReference Include="NSubstitute.Analyzers.CSharp" />
+        <!--     <PrivateAssets>all</PrivateAssets> -->
+        <!--     <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets> -->
+        <!-- </PackageReference> -->
+
+        <!-- https://xunit.net/releases/v2/ -->
+        <PackageReference Include="xunit" />
+        <!-- https://xunit.net/releases/visualstudio/ -->
+        <PackageReference Include="xunit.runner.visualstudio" />
+        <!--     <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets> -->
+        <!--     <PrivateAssets>all</PrivateAssets> -->
+        <!-- </PackageReference> -->
+
+        <!-- Code coverage related references -->
+        <!-- https://github.com/coverlet-coverage/coverlet/releases -->
+        <PackageReference Include="coverlet.collector" />
+        <!--     <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets> -->
+        <!--     <PrivateAssets>all</PrivateAssets> -->
+        <!-- </PackageReference> -->
+        <!-- https://github.com/spekt/junit.testlogger/releases -->
+        <PackageReference Include="JunitXml.TestLogger" />
+    </ItemGroup>
+
+    <ItemGroup Label="Content">
+        <Content Include="Data\CasasciusKnownAddresses.txt">
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </Content>
+    </ItemGroup>
+
+</Project>

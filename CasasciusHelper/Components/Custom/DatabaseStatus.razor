@@ -1,0 +1,175 @@
+﻿@using CasasciusHelper.Core.Data
+@using CasasciusHelper.Core.Data.Import
+@using CasasciusHelper.Core.State
+@using Microsoft.Extensions.Hosting
+@namespace CasasciusHelper.Components.Custom
+@inject IHostEnvironment HostEnvironment
+@inject ApplicationState ApplicationState
+@inject ICasasciusDataCache CasasciusDataCache
+@inject ICasasciusTrackerCsvReader CasasciusTrackerCsvReader
+
+<div class="d-flex align-items-center flex-nowrap gap-sm-1 mt-sm-1">
+    Database status:
+    @if (CasasciusDataCache.HasData)
+    {
+        @if (CasasciusDataCache.HasAllData)
+        {
+            <span class="badge bg-success text-white ms-1" title="Last update: @CasasciusDataCache.LastUpdateTime?.ToString(DATETIME_FORMAT)">Full</span>
+        }
+        else
+        {
+            <span class="badge bg-warning text-black ms-1" title="Information is missing for some coins - repeat the import process">Partial</span>
+        }
+    }
+    else
+    {
+        <span class="badge bg-danger text-white ms-1" title="No data on coins - run the import process">Empty</span>
+    }
+    <label for="csvUpload" class="btn btn-sm btn-outline-primary mb-0" title="Upload CSV" aria-label="Upload CSV">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-arrow-repeat" viewBox="0 0 16 16" role="img" aria-hidden="true">
+            <path d="M11.534 7h3a.5.5 0 0 1 .354.854l-1.5 1.5a.5.5 0 0 1-.708 0L11.18 7.854A.5.5 0 0 1 11.534 7z"/>
+            <path d="M4.466 9h-3a.5.5 0 0 1-.354-.854l1.5-1.5a.5.5 0 0 1 .708 0L4.82 8.146A.5.5 0 0 1 4.466 9z"/>
+            <path fill-rule="evenodd" d="M8 3a5 5 0 0 1 4.546 2.916.5.5 0 1 0 .908-.418A6 6 0 1 0 14 8h-1a5 5 0 1 1-5-5z"/>
+        </svg>
+    </label>
+    <InputFile id="csvUpload" class="d-none" OnChange="@OnCsvSelected" accept=".csv,text/csv" />
+    <button type="button" class="btn btn-sm btn-outline-primary mb-0" @onclick="DownloadCsv" title="Download Data from Casascius Tracker">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-arrow-repeat" viewBox="0 0 16 16" role="img" aria-hidden="true">
+            <path d="M11.534 7h3a.5.5 0 0 1 .354.854l-1.5 1.5a.5.5 0 0 1-.708 0L11.18 7.854A.5.5 0 0 1 11.534 7z"/>
+            <path d="M4.466 9h-3a.5.5 0 0 1-.354-.854l1.5-1.5a.5.5 0 0 1 .708 0L4.82 8.146A.5.5 0 0 1 4.466 9z"/>
+            <path fill-rule="evenodd" d="M8 3a5 5 0 0 1 4.546 2.916.5.5 0 1 0 .908-.418A6 6 0 1 0 14 8h-1a5 5 0 1 1-5-5z"/>
+        </svg>
+    </button>
+    @if (!string.IsNullOrEmpty(fileUploadMessage))
+    {
+        <span class="ms-2 fw-bold @(fileUploadSuccess ? "text-success" : "text-danger")">@fileUploadMessage</span>
+        if (!fileUploadSuccess)
+        {
+            <button type="button" class="btn btn-sm btn-outline-danger mb-0" @onclick="CloseUploadError" title="Close"
+                    aria-label="Close">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor"
+                     class="bi bi-x-lg" viewBox="0 0 16 16" role="img" aria-hidden="true">
+                    <path
+                        d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8 2.146 2.854Z"/>
+                </svg>
+            </button>
+        }
+    }
+    @if (!CasasciusDataCache.HasAllData && !emptyDatabaseWarningClosed)
+    {
+        <div class="alert alert-warning d-flex align-items-center mt-3 pt-1 pb-1" role="alert">
+            <span class="me-1">⚠️</span>
+            <span class="me-1">
+                The local data cache is incomplete. Some features and lookups may be inaccurate until all data are loaded into the application's database
+            </span>
+            <button type="button" class="btn btn-sm btn-outline-danger mb-0" @onclick="CloseEmptyDatabaseWarning" title="Close"
+                    aria-label="Close">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor"
+                     class="bi bi-x-lg" viewBox="0 0 16 16" role="img" aria-hidden="true">
+                    <path
+                        d="M2.146 2.854a.5.5 0 1 1 .708-.708L8 7.293l5.146-5.147a.5.5 0 0 1 .708.708L8.707 8l5.147 5.146a.5.5 0 0 1-.708.708L8 8.707l-5.146 5.147a.5.5 0 0 1-.708-.708L7.293 8 2.146 2.854Z"/>
+                </svg>
+            </button>
+        </div>
+    }
+</div>
+
+@code {
+    private const string DATETIME_FORMAT = "yyyy.MM.dd HH:mm:ss";
+
+    private bool emptyDatabaseWarningClosed;
+
+    private bool fileUploadSuccess;
+    private string fileUploadMessage = "";
+
+    private async Task OnCsvSelected(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+
+        try
+        {
+            ApplicationState.StatusLine = "Importing CSV Data";
+            ApplicationState.NotifyStateChanged();
+
+            SetFileUploadStatus(success: true);
+
+            bool importResult;
+            await using (var stream = file.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024))
+                importResult = await CasasciusTrackerCsvReader.ImportStreamUsingTempFile(stream);
+
+            if (importResult)
+            {
+                await CasasciusDataCache.Initialize();
+                ApplicationState.HasData = CasasciusDataCache.HasData;
+                ApplicationState.LastDataUpdate = CasasciusDataCache.LastUpdateTime;
+            }
+            else
+            {
+                SetFileUploadStatus("Import error.");
+            }
+        }
+        catch (Exception ex)
+        {
+            var errorMessage = HostEnvironment.IsDevelopment() ? $"Import error: {ex.Message}" : "Import error.";
+            SetFileUploadStatus(errorMessage);
+        }
+        finally
+        {
+            ApplicationState.StatusLine = "";
+            ApplicationState.NotifyStateChanged();
+            StateHasChanged();
+        }
+    }
+
+    private async Task DownloadCsv()
+    {
+        try
+        {
+            ApplicationState.StatusLine = "Importing CSV Data";
+            ApplicationState.NotifyStateChanged();
+
+            SetFileUploadStatus(success: true);
+
+            var importResult = await CasasciusTrackerCsvReader.DownloadAndImportLatestSnapshot();
+            if (importResult)
+            {
+                await CasasciusDataCache.Initialize();
+                ApplicationState.HasData = CasasciusDataCache.HasData;
+                ApplicationState.LastDataUpdate = CasasciusDataCache.LastUpdateTime;
+            }
+            else
+            {
+                SetFileUploadStatus("Import error.");
+            }
+
+        }
+        catch (Exception ex)
+        {
+            var errorMessage = HostEnvironment.IsDevelopment() ? $"Import error: {ex.Message}" : "Import error.";
+            SetFileUploadStatus(errorMessage);
+        }
+        finally
+        {
+            ApplicationState.StatusLine = "";
+            ApplicationState.NotifyStateChanged();
+            StateHasChanged();
+        }
+    }
+
+    private void CloseUploadError()
+    {
+        SetFileUploadStatus();
+        StateHasChanged();
+    }
+
+    private void CloseEmptyDatabaseWarning()
+    {
+        emptyDatabaseWarningClosed = true;
+    }
+
+    private void SetFileUploadStatus(string message = "", bool success = false)
+    {
+        fileUploadMessage = message;
+        fileUploadSuccess = success;
+    }
+}

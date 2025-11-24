@@ -1,0 +1,558 @@
+﻿@page "/"
+@using System.Text
+@using System.Threading
+@using Casascius.Coins
+@using CasasciusHelper.Core
+@using CasasciusHelper.Core.Data
+@using CasasciusHelper.Core.Services
+@using CasasciusHelper.Database.Entities
+@using Microsoft.Extensions.Hosting
+@inject ICasasciusFacade CasasciusFacade
+@inject IHostEnvironment HostEnvironment
+@inject ICasasciusDataCache CasasciusDataCache
+@inject IMiniKeyService MiniKeyService
+@inject IMiniKeySolver MiniKeySolver
+@inject NavigationManager NavigationManager
+@implements IDisposable
+
+<PageTitle>Home</PageTitle>
+
+<h1>Home</h1>
+<hr/>
+
+<div class="mt-4">
+    <h4>Minikey Operations</h4>
+    <label for="miniKey" class="form-label mb-0 me-2 d-flex align-items-center">
+        <b>MiniKey</b>
+        <span class="badge rounded-circle bg-secondary text-white ms-1"
+              style="width:1.15rem;height:1.15rem;display:inline-flex;align-items:center;justify-content:center;"
+              title='Use "?" in places you are not sure'>?</span>
+        <small class="ms-1">
+            (for example:
+            <code role="button" style="cursor: copy;" title="Click to use this MiniKey" @onclick="@(() => CopyMiniKey(EXAMPLE_MINI_KEY1))">@EXAMPLE_MINI_KEY1</code>
+            or
+            <code role="button" style="cursor: copy;" title="Click to use this MiniKey" @onclick="@(() => CopyMiniKey(EXAMPLE_MINI_KEY2))">@EXAMPLE_MINI_KEY2</code>
+            or
+            <code role="button" style="cursor: copy;" title="Click to use this MiniKey" @onclick="@(() => CopyMiniKey(EXAMPLE_MINI_KEY3))">@EXAMPLE_MINI_KEY3</code>
+            )
+        </small>
+    </label>
+    <div class="d-flex align-items-center flex-nowrap gap-sm-1 mt-sm-1">
+        <input id="miniKey" class="form-control form-control-sm font-monospace" style="max-width: 600px;" value="@miniKey" @oninput="OnMiniKeyInput" />
+        @if (!string.IsNullOrEmpty(miniKeyValidationMessage))
+        {
+            <span class="ms-2 fw-bold @(miniKeyValidationResult ? "text-success" : "text-danger")">@miniKeyValidationMessage</span>
+        }
+    </div>
+    <div class="d-flex align-items-center flex-nowrap gap-sm-1 mt-sm-1">
+        <button type="button" class="btn btn-sm btn-success" @onclick="Validate" disabled="@isBusy" title="Validate the MiniKey">Validate</button>
+        <button type="button" class="btn btn-sm btn-info" @onclick="GenerateRandom" disabled="@isBusy" title="Generate a MiniKey">Generate</button>
+        <button type="button" class="btn btn-sm btn-info" @onclick="() => GenerateRandom(100)" disabled="@isBusy" title="Generate multiple MiniKeys">x100</button>
+        <button type="button" class="btn btn-sm btn-warning" @onclick="Solve" title="Try to guess a Casascius MiniKey from the input containing '?'s. Warning: This may take a while" disabled="@isBusy">Solve</button>
+        <button type="button" class="btn btn-sm btn-danger" @onclick="SolveMany" title="Get all correct MiniKeys from the input containing '?'s. Warning: This may take a while" disabled="@isBusy">SolveMany</button>
+        <span class="ms-2 fw-bold @(solutionResult ? "text-success" : "text-danger")">@solutionMessage</span>
+        @if (isBusy)
+        {
+            <span class="ms-2 spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+        }
+    </div>
+</div>
+
+<div class="mt-4">
+    <h4>MiniKey Operation Results</h4>
+    <div class="d-flex align-items-center flex-nowrap gap-sm-1 mb-sm-1">
+        <button type="button" class="btn btn-sm btn-secondary" @onclick="ClearMiniKeys" title="Clear investigation results" disabled="@(investigationResults.Count == 0)">Clear</button>
+        <button type="button" class="btn btn-sm btn-secondary" @onclick="ShowKnownMinikeys" title="Show known MiniKeys">Known</button>
+    </div>
+    <table class="table table-striped table-sm align-middle" style="table-layout: fixed; width: 100%;">
+        <colgroup>
+            <col style="width: 50px;" />
+            <col style="width: 380px;" />
+            <col style="width: 420px;" />
+            <col/>
+        </colgroup>
+        <thead class="text-white" style="background-color: dimgrey;">
+        <tr>
+            <th scope="col">#</th>
+            <th scope="col">MiniKey</th>
+            <th scope="col">Address</th>
+            <th scope="col">WIF</th>
+        </tr>
+        </thead>
+        <tbody>
+        @for (var i = 0; i < investigationResults.Count; i++)
+        {
+            var item = investigationResults[i];
+            <tr>
+                <th scope="row">@((i + 1).ToString())</th>
+                <td class="text-nowrap">
+                    <code>@item.MiniKey</code>
+                    @if (item.IsCasasciusCoin.HasValue && item.IsCasasciusCoin.Value)
+                    {
+                        <span class="badge bg-success ms-2 mb-1">Casascius</span>
+                    }
+                </td>
+                <td class="text-nowrap">
+                    <code>@item.Address</code>
+                </td>
+                <td class="text-nowrap">
+                    <code>@item.WifPrivateKey</code>
+                </td>
+            </tr>
+        }
+        </tbody>
+    </table>
+</div>
+
+<div class="mt-4">
+    <h4>Casascius Addresses Lookup</h4>
+    <label for="address" class="form-label mb-0 me-2 d-flex align-items-center">
+        <b>Address</b>
+        <small class="ms-1">
+
+        </small>
+        <small class="ms-1">
+            (for example:
+            <code role="button" style="cursor: copy;" title="Click to use this Address filter" @onclick="@(() => CopyAddressFilter(EXAMPLE_ADDRESS_FILTER1))">@EXAMPLE_ADDRESS_FILTER1</code>
+            or
+            <code role="button" style="cursor: copy;" title="Click to use this Address filter" @onclick="@(() => CopyAddressFilter(EXAMPLE_ADDRESS_FILTER2))">@EXAMPLE_ADDRESS_FILTER2</code>
+            . Coins usually have 8 first symbols of the corresponding address on their side)
+        </small>
+    </label>
+    <div class="d-flex align-items-center flex-nowrap gap-sm-1 mb-sm-1">
+        <input id="address" class="form-control form-control-sm font-monospace" style="max-width: 600px;" value="@address" @oninput="OnAddressInput"/>
+        <button type="button" class="btn btn-sm btn-primary" @onclick="FilterAddress" title="Search addresses" disabled="@(address.Length < MIN_ADDRESS_LENGTH)">Search</button>
+        <button type="button" class="btn btn-sm btn-secondary" @onclick="ClearAddress" title="Clear address" disabled="@(address.Length == 0)">Clear</button>
+    </div>
+    <table class="table table-striped table-sm align-middle" style="table-layout: fixed; width: 100%;">
+        <colgroup>
+            <col style="width: 50px;" />
+            <col style="width: 350px;" />
+            <col/>
+            <col style="width: 200px;"/>
+            <col style="width: 200px;"/>
+        </colgroup>
+        <thead class="text-white" style="background-color: dimgrey;">
+        <tr>
+            <th scope="col">#</th>
+            <th scope="col" class="text-center">Address</th>
+            <th scope="col">Status</th>
+            <th scope="col">Redeem Time</th>
+            <th scope="col">Update Time</th>
+        </tr>
+        </thead>
+        <tbody>
+        @for (var i = 0; i < addressSearchResults.Count; i++)
+        {
+            var item = addressSearchResults[i];
+            <tr>
+                <td scope="row">@item.Id</td>
+                <td class="text-nowrap text-center">
+                    <code>@item.Address</code>
+                </td>
+                <td>
+                    @{
+                        var statusClass = item.StatusValue switch
+                        {
+                            CasasciusStatuses.Unfunded => "bg-secondary",
+                            CasasciusStatuses.Active => "bg-success",
+                            CasasciusStatuses.Redeemed => "bg-danger",
+                            _ => "bg-secondary"
+                        };
+                    }
+                    <span class="badge @statusClass ms-2 mb-1" title="Status">@item.Status</span>
+                    @if (item.Series.HasValue)
+                    {
+                        <span class="badge bg-secondary ms-2 mb-1" title="Series">Series @item.Series</span>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(item.Type))
+                    {
+                        <span class="badge bg-info ms-2 mb-1 text-black" title="Type">@item.Type</span>
+                    }
+                    @if (item.Value.HasValue)
+                    {
+                        <span class="badge bg-warning ms-2 mb-1 text-black" title="Value">@item.Value BTC</span>
+                    }
+                    @if (item.Balance > 0)
+                    {
+                        <span class="badge bg-success ms-2 mb-1" title="Balance">@item.Balance BTC</span>
+                    }
+                </td>
+                <td>@item.RedeemTime?.ToString(DATETIME_FORMAT)</td>
+                <td>@item.UpdateTime.ToString(DATETIME_FORMAT)</td>
+            </tr>
+        }
+        </tbody>
+    </table>
+</div>
+
+@code {
+    private const string DATETIME_FORMAT = "yyyy.MM.dd HH:mm:ss";
+
+    private const string EXAMPLE_MINI_KEY1 = "SG64GZqySYwBm9KxE3wJ29";
+    private const string EXAMPLE_MINI_KEY2 = "S6c56bnXQiBjk9mqSYE7ykVQ7NzrRy";
+    private const string EXAMPLE_MINI_KEY3 = "S6c56bnXQiBjk9mqSYE7ykVQ7Nzr??";
+    private const int MIN_ADDRESS_LENGTH = 4;
+    private const string EXAMPLE_ADDRESS_FILTER1 = "1Ccc";
+    private const string EXAMPLE_ADDRESS_FILTER2 = "125f";
+
+    private string miniKey = "";
+    private string miniKeyValidationMessage = "";
+    private bool miniKeyValidationResult;
+    private List<InvestigationResult> investigationResults = new();
+    private bool isBusy;
+    private bool solutionResult;
+    private string solutionMessage = "";
+    private string address = "";
+
+    // Address search control
+    private List<CasasciusCoin> addressSearchResults = new();
+    private CancellationTokenSource? searchCancellationTokenSource;
+    private IDisposable? locationChangingRegistration;
+
+    protected override void OnInitialized()
+    {
+        // Register a handler invoked before navigation; safe place to cancel running work
+        locationChangingRegistration = NavigationManager.RegisterLocationChangingHandler(OnLocationChangingAsync);
+    }
+
+    private ValueTask OnLocationChangingAsync(LocationChangingContext context)
+    {
+        CancelAndDisposeSearchCts();
+        return ValueTask.CompletedTask;
+    }
+
+    public void Dispose()
+    {
+        locationChangingRegistration?.Dispose();
+        CancelAndDisposeSearchCts();
+    }
+
+    private void CancelAndDisposeSearchCts()
+    {
+        var cts = Interlocked.Exchange(ref searchCancellationTokenSource, null);
+        if (cts is null) return;
+
+        try { cts.Cancel(); }
+        catch (ObjectDisposedException) { /* already disposed - ignore */ }
+
+        cts.Dispose();
+    }
+
+    private void CopyMiniKey(string value)
+    {
+        miniKey = value;
+        Validate();
+    }
+
+    private void CopyAddressFilter(string value)
+    {
+        address = value;
+        FilterAddress();
+    }
+
+    private void OnMiniKeyInput(ChangeEventArgs e)
+    {
+        miniKey = e.Value?.ToString() ?? string.Empty;
+        Validate();
+    }
+
+    private void OnAddressInput(ChangeEventArgs e)
+    {
+        addressSearchResults = new List<CasasciusCoin>();
+
+        address = e.Value?.ToString() ?? string.Empty;
+
+        FilterAddress();
+    }
+
+    private void FilterAddress()
+    {
+        if (address.Length >= MIN_ADDRESS_LENGTH)
+        {
+            addressSearchResults = CasasciusDataCache.SearchCasasciusAddresses(address);
+        }
+    }
+
+    private void ClearAddress()
+    {
+        address = "";
+        addressSearchResults = new List<CasasciusCoin>();
+    }
+
+    private void GenerateRandom()
+    {
+        miniKeyValidationMessage = "";
+        solutionMessage = "";
+
+        miniKey = CasasciusFacade.GenerateMiniKey();
+        Validate();
+    }
+
+    private void GenerateRandom(int quantity)
+    {
+        miniKeyValidationMessage = "";
+        solutionMessage = "";
+
+        var result = new List<string>();
+        for (var i = 0; i < quantity; i++)
+        {
+            var newMiniKey = CasasciusFacade.GenerateMiniKey();
+            result.Add(newMiniKey);
+        }
+
+        ValidateMany(result);
+    }
+
+    private bool ValidateMiniKey(string miniKeyInput)
+    {
+        var miniKeyHashBytes = Encoding.UTF8.GetBytes(miniKeyInput);
+        var result = MiniKeyService.CheckMiniKey(miniKeyHashBytes);
+
+        return result;
+    }
+
+    private void Validate()
+    {
+        miniKeyValidationMessage = "";
+        solutionMessage = "";
+        ClearMiniKeys();
+
+        if (string.IsNullOrWhiteSpace(miniKey))
+        {
+            miniKeyValidationResult = false;
+            miniKeyValidationMessage = "Please enter a MiniKey.";
+            return;
+        }
+
+        var investigationResult = new InvestigationResult();
+        investigationResult.MiniKey = miniKey;
+
+        miniKeyValidationResult = ValidateMiniKey(miniKey);
+        miniKeyValidationMessage = miniKeyValidationResult ? "" : "Invalid MiniKey!";
+
+        if (miniKeyValidationResult)
+        {
+            var (miniKeyWifPrivateKey, miniKeyAddress) = MiniKeyService.DeconstructMiniKey(miniKey);
+            var miniKeyIsCasasciusCoin = CasasciusDataCache.IsCasasciusAddress(miniKeyAddress);
+
+            investigationResult.Address = miniKeyAddress;
+            investigationResult.WifPrivateKey = miniKeyWifPrivateKey;
+            investigationResult.IsCasasciusCoin = miniKeyIsCasasciusCoin;
+            if (miniKeyIsCasasciusCoin)
+            {
+                address = miniKeyAddress;
+                FilterAddress();
+            }
+
+            investigationResults = new List<InvestigationResult> { investigationResult };
+        }
+    }
+
+    private void ValidateMany(List<string> miniKeys)
+    {
+        var result = new List<InvestigationResult>();
+
+        foreach (var miniKeyForValidation in miniKeys)
+        {
+            var investigationResult = new InvestigationResult();
+            investigationResult.MiniKey = miniKeyForValidation;
+
+            var isValidKey = ValidateMiniKey(miniKeyForValidation);
+            if (isValidKey)
+            {
+                var (miniKeyWifPrivateKey, miniKeyAddress) = MiniKeyService.DeconstructMiniKey(miniKeyForValidation);
+                var miniKeyIsCasasciusCoin = CasasciusDataCache.IsCasasciusAddress(miniKeyAddress);
+
+                investigationResult.Address = miniKeyAddress;
+                investigationResult.WifPrivateKey = miniKeyWifPrivateKey;
+                investigationResult.IsCasasciusCoin = miniKeyIsCasasciusCoin;
+            }
+            else
+            {
+                // Invalid minikey (not possible because ValidateMany is called only from GenerateRandom and SolveMany)
+            }
+
+            result.Add(investigationResult);
+        }
+
+        investigationResults = result.OrderByDescending(x => x.IsCasasciusCoin).ThenBy(x => x.MiniKey).ToList();
+
+        // Filter by first Casascius address
+        var casasciusResult = result.FirstOrDefault(x => x.IsCasasciusCoin.HasValue && x.IsCasasciusCoin.Value);
+        if (casasciusResult is not null)
+        {
+            address = casasciusResult.Address!;
+            FilterAddress();
+        }
+    }
+
+    private async Task Solve()
+    {
+        miniKeyValidationMessage = "";
+        solutionMessage = "";
+        ClearMiniKeys();
+
+        if (string.IsNullOrWhiteSpace(miniKey))
+        {
+            miniKeyValidationResult = false;
+            miniKeyValidationMessage = "Please enter a MiniKey template.";
+            return;
+        }
+
+        var uncertaintyLevel = MiniKeySolver.GetUncertaintyContext(miniKey).Length;
+        if (uncertaintyLevel > 4)
+        {
+            miniKeyValidationResult = false;
+            miniKeyValidationMessage = "There is too much uncertainty"; // it will take too long
+            return;
+        }
+
+        // Cancel any previous run (atomically) and create a new CTS
+        CancelAndDisposeSearchCts();
+        searchCancellationTokenSource = new CancellationTokenSource();
+        var token = searchCancellationTokenSource.Token;
+
+        miniKeyValidationMessage = "";
+        miniKeyValidationResult = false;
+
+        solutionResult = false;
+        solutionMessage = "Searching for a solution";
+        try
+        {
+            isBusy = true;
+            StateHasChanged(); // render spinner
+            await Task.Yield(); // give UI a chance to update
+
+            var solution = await Task.Run(() => MiniKeySolver.SearchKey(miniKey, token), token);
+
+            // If navigation occurred while computing, avoid updating UI
+            if (token.IsCancellationRequested)
+            {
+                return;
+            }
+
+            if (solution is not null)
+            {
+                miniKey = solution;
+                Validate();
+                solutionMessage = "";
+                solutionResult = true;
+                return;
+            }
+
+            solutionMessage = "There is no solution";
+        }
+        catch (OperationCanceledException)
+        {
+            solutionMessage = "";
+        }
+        catch (Exception ex)
+        {
+            solutionResult = false;
+            solutionMessage = HostEnvironment.IsDevelopment() ? $"Error: {ex.Message}" : "Error (invalid MiniKey length?)";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private async Task SolveMany()
+    {
+        miniKeyValidationMessage = "";
+        solutionMessage = "";
+        ClearMiniKeys();
+
+        if (string.IsNullOrWhiteSpace(miniKey))
+        {
+            miniKeyValidationResult = false;
+            miniKeyValidationMessage = "Please enter a MiniKey template.";
+            return;
+        }
+
+        var uncertaintyLevel = MiniKeySolver.GetUncertaintyContext(miniKey).Length;
+        if (uncertaintyLevel > 4)
+        {
+            miniKeyValidationResult = false;
+            miniKeyValidationMessage = "There is too much uncertainty"; // it will take too long
+            return;
+        }
+
+        // Cancel any previous run (atomically) and create a new CTS
+        CancelAndDisposeSearchCts();
+        searchCancellationTokenSource = new CancellationTokenSource();
+        var token = searchCancellationTokenSource.Token;
+
+        miniKeyValidationMessage = "";
+        miniKeyValidationResult = false;
+
+        solutionResult = false;
+        solutionMessage = "Searching for all possible solutions";
+        try
+        {
+            isBusy = true;
+            StateHasChanged(); // render spinner
+            await Task.Yield(); // give UI a chance to update
+
+            var solutions = await Task.Run(() => MiniKeySolver.SearchKeys(miniKey, token), token);
+
+            // If navigation occurred while computing, avoid updating UI
+            if (token.IsCancellationRequested)
+            {
+                return;
+            }
+
+            if (solutions.Any())
+            {
+                solutionResult = true;
+                solutionMessage = "";
+                ValidateMany(solutions);
+                return;
+            }
+
+            solutionMessage = "There are no solutions";
+        }
+        catch (OperationCanceledException)
+        {
+            solutionMessage = "";
+        }
+        catch (Exception ex)
+        {
+            solutionResult = false;
+            solutionMessage = HostEnvironment.IsDevelopment() ? $"Error: {ex.Message}" : "Error (invalid MiniKey length?)";
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private void ClearMiniKeys()
+    {
+        investigationResults = new List<InvestigationResult>();
+        address = "";
+        addressSearchResults = new List<CasasciusCoin>();
+    }
+
+    private void ShowKnownMinikeys()
+    {
+        var minikeys = CasasciusKnownCoins.Collection
+                                          .Values
+                                          .Where(x => x.MiniKey is not null)
+                                          .Select(x => x.MiniKey!)
+                                          .ToList();
+        ValidateMany(minikeys);
+    }
+
+    private class InvestigationResult
+    {
+        public string MiniKey { get; set; } = "";
+
+        public string? WifPrivateKey { get; set; }
+
+        public string? Address { get; set; }
+
+        public bool? IsCasasciusCoin { get; set; }
+    }
+}

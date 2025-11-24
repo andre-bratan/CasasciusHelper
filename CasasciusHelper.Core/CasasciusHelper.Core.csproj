@@ -1,0 +1,28 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net8.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+    </PropertyGroup>
+
+    <ItemGroup Label="External references">
+        <PackageReference Include="Microsoft.Extensions.Http" />
+        <PackageReference Include="NBitcoin" />
+    </ItemGroup>
+
+    <ItemGroup Label="Internal references">
+        <ProjectReference Include="..\Casascius.Coins\Casascius.Coins.csproj" />
+        <ProjectReference Include="..\Casascius.Port\Casascius.Port.csproj" />
+        <ProjectReference Include="..\CasasciusHelper.Database\CasasciusHelper.Database.csproj" />
+    </ItemGroup>
+
+    <ItemGroup Label="Tests related references">
+        <!-- Allow Tests project to "see" internal classes -->
+        <InternalsVisibleTo Include="$(AssemblyName).Tests" />
+        <InternalsVisibleTo Include="$(AssemblyName).Integration.Tests" />
+        <!-- NSubstitute requirement for "internal" classes -->
+        <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
+    </ItemGroup>
+
+</Project>
